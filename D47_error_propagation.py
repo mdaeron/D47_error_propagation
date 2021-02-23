@@ -735,7 +735,7 @@ def test_normality(rD47 = 'None', ultext = '', lrtext = ''):
 			
 
 def fig_lmfit_effect():
-	import D47crunch
+	import D47crunch_snapshot as D47crunch
 	D47crunch.D47data.Nominal_D47 = {
 		'ETH-1':   D47crunch.D47data.Nominal_D47['ETH-1'],
 		'ETH-2':   D47crunch.D47data.Nominal_D47['ETH-2'],

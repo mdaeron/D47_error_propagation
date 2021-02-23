@@ -22,6 +22,7 @@ from scipy.stats import chi2, norm, kstest
 from matplotlib.patches import Ellipse
 import matplotlib.patheffects as PathEffects
 from numpy import random as nprandom
+from statistics import stdev
 
 from matplotlib import rcParams
 rcParams["font.family"] = "sans-serif"
@@ -320,7 +321,7 @@ def errormap(data, a, b, c, CM, Nominal_D47,
 		t.set_bbox(dict(facecolor='w', alpha=1, edgecolor='k', lw=0.5, zorder = 200))
 
 	xticks([-40, -20, 0, 20])
-	yticks([.3, .5, .7])
+	yticks([.2, .4, .6])
 
 def fig_properties_of_standardization_errors(session = 'Session02', lab = 'Lab12'):
 	data = read_csv(f'rawdata.csv')
@@ -659,9 +660,28 @@ def test_normality(rD47 = 'None', ultext = '', lrtext = ''):
 	close(fig)
 
 	if rD47 == 'None':
+	
+		fig = figure()
+		X = array([ks['D47'] for ks in KS['both']])
+		sX = array([ks['sigma'] for ks in KS['both']])
+		Y = array([mean(ks["X"]) for ks in KS['both']])
+		sY = array([stdev(ks["X"]) for ks in KS['both']])
+		
+		plot((X-Y)/sX, (sX-sY)/sX, 'r+')
+		xlabel('Scaled error in final Δ$_{47}$ value')
+		ylabel('Scaled error in final Δ$_{47}$ SE')
+# 		show()
+		close(fig)
+		with open('commands.tex', 'a') as fid:
+			fid.write(f'\\newcommand{{\\worseNonGaussScalledErrorOnMean}}{{{max(abs((X-Y)/sX))*100:.0f}}}\n')
+			fid.write(f'\\newcommand{{\\worseNonGaussScalledErrorOnSE}}{{{max(abs((sX-sY)/sX))*100:.0f}}}\n')
+			fid.write(f'\\newcommand{{\\typicalNonGaussScalledErrorOnMean}}{{{mean(((X-Y)/sX)**2)**.5:.2f}}}\n')
+			fid.write(f'\\newcommand{{\\typicalNonGaussScalledErrorOnSE}}{{{mean(((sX-sY)/sX)**2)**.5:.2f}}}\n')
+	
 		p = [ks['pvalue'] for ks in KS['allo']]
 		k = p.index(min(p))
-		ks = KS['allo'][k]
+		ks = KS['both'][k]
+		print(ks)
 		fig = figure(figsize = (3.5,4.5))
 		figure_margins(fig, 10, 2, 12, 2, 0, -0.15)
 
@@ -680,6 +700,7 @@ def test_normality(rD47 = 'None', ultext = '', lrtext = ''):
 			'k-', lw = 1, label = 'Gaussian')
 		axis([ks['X'].min(), ks['X'].max(), None, None])
 		yticks([])
+		ylabel('Probability\ndistribution function', labelpad = 2)
 # 		legend()
 
 		subplot(212)
@@ -696,6 +717,12 @@ def test_normality(rD47 = 'None', ultext = '', lrtext = ''):
 		pv = f"${ks['pvalue']:.0e}}}$".replace('e-0', '\\times10^{–')
 		with open('commands.tex', 'a') as fid:
 			fid.write(f'\\newcommand{{\\worseMCpv}}{{{pv}}}\n')
+			fid.write(f'\\newcommand{{\\worseMCmeanMC}}{{{mean(ks["X"]):.4f}}}\n')
+			fid.write(f'\\newcommand{{\\worseMCmeanGauss}}{{{ks["D47"]:.4f}}}\n')
+			fid.write(f'\\newcommand{{\\worseMCsigmaMC}}{{{stdev(ks["X"]):.4f}}}\n')
+			fid.write(f'\\newcommand{{\\worseMCsigmaGauss}}{{{ks["sigma"]:.4f}}}\n')
+			fid.write(f'\\newcommand{{\\worseMCmeanOffset}}{{{(ks["D47"] - mean(ks["X"]))/ks["sigma"]:.2f}}}\n')
+			fid.write(f'\\newcommand{{\\worseMCsigmaOffset}}{{{(ks["sigma"] - stdev(ks["X"]))/ks["sigma"]:.2f}}}\n')
 		text(.95, .05, f'p = {pv}', ha = 'right', transform = gca().transAxes)
 		xlabel(f"Δ$_{{47}}$ of {ks['sample']} in {ks['session'].split('_')[1]} of {ks['session'].split('_')[0]}")
 		ylabel('Cumulative\ndistribution function', labelpad = -8)
@@ -709,6 +736,12 @@ def test_normality(rD47 = 'None', ultext = '', lrtext = ''):
 
 def fig_lmfit_effect():
 	import D47crunch
+	D47crunch.D47data.Nominal_D47 = {
+		'ETH-1':   D47crunch.D47data.Nominal_D47['ETH-1'],
+		'ETH-2':   D47crunch.D47data.Nominal_D47['ETH-2'],
+		'ETH-3':   D47crunch.D47data.Nominal_D47['ETH-3'],
+		}
+
 	data = read_csv(f'rawdata.csv')
 	data = [r for r in data if r['Lab'] == 'Lab12']
 	data = D47crunch.D47data(data)
@@ -722,7 +755,7 @@ def fig_lmfit_effect():
 	
 		if x:
 			data.split_samples()
-		data.standardize()
+		data.standardize(method = 'pooled')
 
 		for k, session in enumerate(['Session01', 'Session02', 'Session03', 'Session04']):
 			subplot(245 + k - x*4)
@@ -746,9 +779,9 @@ def fig_lmfit_effect():
 
 			if k == 0:
 				if x:
-					txt = 'Session-independent standardization models only taking anchors into account:'
+					txt = 'Session-independent standardization models (only taking anchors into account):'
 				else:
-					txt = 'Integrated standardization model taking anchors and unknowns into account:'
+					txt = 'Pooled standardization model (taking anchors and unknowns into account):'
 				text(0, 1.04, txt, transform = ax.transAxes, size = 10, weight = 'bold')
 			if x:
 				ax.set_xticklabels(['' for t in ax.get_xticklabels()])

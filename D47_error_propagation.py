@@ -8,8 +8,8 @@ __author__    = 'Mathieu Daëron'
 __contact__   = 'daeron@lsce.ipsl.fr'
 __copyright__ = 'Copyright (c) 2020 Mathieu Daëron'
 __license__   = 'Modified BSD License - https://opensource.org/licenses/BSD-3-Clause'
-__date__      = '2020-12-10'
-__version__   = '1.0.1'
+__date__      = '2021-03-04'
+__version__   = '1.1.0'
 
 
 N_MONTECARLO = 10_000
@@ -23,6 +23,7 @@ from matplotlib.patches import Ellipse
 import matplotlib.patheffects as PathEffects
 from numpy import random as nprandom
 from statistics import stdev
+from tqdm import tqdm
 
 from matplotlib import rcParams
 rcParams["font.family"] = "sans-serif"
@@ -83,7 +84,7 @@ def smart_type( x ) :
 	return y
 
 
-def normalize(data, Nominal_D47):
+def normalize(data, Nominal_D47, verbal = False):
 	A = [
 		[ Nominal_D47[r['Sample']], r['d47'], 1 ]
 		for r in data if r['Sample'] in Nominal_D47
@@ -93,14 +94,9 @@ def normalize(data, Nominal_D47):
 		for r in data if r['Sample'] in Nominal_D47
 		]
 	A, Y = array(A), array(Y)
-# 	print(linalg.lstsq(A, Y))
 	
-# 	CM = solve(A.T @ A, eye(3))
 	CM = inv( A.T @ A )
-# 	M = inv( A.T @ A ) @ A.T
-# 	M = CM @ A.T
 	a,b,c = ( CM @ A.T @ Y ).T[0,:]
-# 	CM = inv( A.T @ A )
 
 	for r in data :
 		r['D47'] = ( r['D47raw'] - b * r['d47'] - c ) / a
@@ -116,13 +112,13 @@ def normalize(data, Nominal_D47):
 	CM *= a**2 * chi2 / (Na-Ns)
 	rD47 = sqrt(chi2/(Na-Ns))
 	
-# 	print(f'a = {a:.2f} ± {CM[0,0]**.5:.4f}')
-# 	print(f'b = {b:.1e} ± {CM[1,1]**.5:.4e}')
-# 	print(f'c = {c:.3f} ± {CM[2,2]**.5:.4f}')
-# 	print(f'rD47 = {rD47:.4f} ‰')
-# 	print(f'N = {Y.size}')
-	print(f'rD47/sqrt(N) = {rD47 / (Y.size)**.5:.6f} ‰')
-
+	if verbal:
+# 		print(f'a = {a:.2f} ± {CM[0,0]**.5:.4f}')
+# 		print(f'b = {b:.1e} ± {CM[1,1]**.5:.4e}')
+# 		print(f'c = {c:.3f} ± {CM[2,2]**.5:.4f}')
+# 		print(f'rD47 = {rD47:.4f} ‰')
+# 		print(f'N = {Y.size}')
+		print(f'rD47/sqrt(N) = {rD47 / (Y.size)**.5:.6f} ‰')
 
 	return a, b, c, CM, rD47
 
@@ -182,18 +178,12 @@ def covariance_of_unknowns(data):
 	V = J @ C @ J.T
 	Vs = J @ Cs @ J.T
 
-# 	order = [1,0,3,2]
-# 	unknowns = [unknowns[k] for k in order]
-# 	X = [X[k] for k in order]
-# 	V = V[order,:][:,order]
-
 	fig = figure(figsize=(5,5))
 	figure_margins(fig, 17, 3, 15, 5, hspace = .1, wspace = .1)
 	k = 0
 	for i in range(Nu-1):
 		for j in range(i+1):
 			k += 1
-# 			ax = subplot(3,3,(Nu-2-j)*3+i+1)
 			ax = subplot(3,3,(Nu-j-2)*3+Nu-i-1)
 
 			CM = V[[i+1,j],:][:,[i+1,j]]		
@@ -231,23 +221,23 @@ def covariance_of_unknowns(data):
 			else:
 				ax.set_yticklabels(['' for x in yticks()[0]])
 
-	savefig('covariance_of_unknowns.pdf')
+	savefig('Fig3_covariance_of_unknowns.pdf')
 	close(fig)
 
 	S = diag(V).reshape((1,Nu))**.5
 	V = V/S
 	V = V/S.T
 	
-	tex = '\\begin{tabular}{'+'c'*Nu+'}\n\\toprule\n'
-	tex += '& \\textbf{' + '} & \\textbf{'.join(unknowns[:-1]) + '} \\\\\n'
-	for i in range(Nu-1):
-		tex += f'\\textbf{{{unknowns[i+1]}}}'
-		for j in range(i+1):
-			tex += f' & ${V[i+1,j]:+.2f}$'
-		tex += '\\\\\n'
-	tex += '\\bottomrule\n\\end{tabular}'
-	with open('covariance_of_samples.tex', 'w') as fid:
-		fid.write(tex)
+# 	tex = '\\begin{tabular}{'+'c'*Nu+'}\n\\toprule\n'
+# 	tex += '& \\textbf{' + '} & \\textbf{'.join(unknowns[:-1]) + '} \\\\\n'
+# 	for i in range(Nu-1):
+# 		tex += f'\\textbf{{{unknowns[i+1]}}}'
+# 		for j in range(i+1):
+# 			tex += f' & ${V[i+1,j]:+.2f}$'
+# 		tex += '\\\\\n'
+# 	tex += '\\bottomrule\n\\end{tabular}'
+# 	with open('covariance_of_samples.tex', 'w') as fid:
+# 		fid.write(tex)
 
 	return unknowns, V
 
@@ -260,14 +250,14 @@ def total_error(a, b, c, CM, d47, D47raw, sD47raw):
 	sD47 = (J @ C @ J.T)**.5
 	return float(sD47)
 
-def total_error_new(u, v, w, CM, d47, D47raw, sD47raw):
-	D47 = u * D47raw + v * d47 + w
-	J = array([u, D47raw, d47, 1])
-	C = zeros((4,4))
-	C[0,0] = sD47raw**2
-	C[1:,1:] = CM[:,:]
-	sD47 = (J @ C @ J.T)**.5
-	return float(sD47)
+# def total_error_new(u, v, w, CM, d47, D47raw, sD47raw):
+# 	D47 = u * D47raw + v * d47 + w
+# 	J = array([u, D47raw, d47, 1])
+# 	C = zeros((4,4))
+# 	C[0,0] = sD47raw**2
+# 	C[1:,1:] = CM[:,:]
+# 	sD47 = (J @ C @ J.T)**.5
+# 	return float(sD47)
 
 def errormap(data, a, b, c, CM, Nominal_D47,
 	manual = 'None',
@@ -275,6 +265,7 @@ def errormap(data, a, b, c, CM, Nominal_D47,
 	addwidth = 0,
 	cskip = 2,
 	cstart = 1,
+	verbal = False,
 	):
 	
 	X = [r['d47'] for r in data if r['Sample'] in Nominal_D47]
@@ -289,7 +280,7 @@ def errormap(data, a, b, c, CM, Nominal_D47,
 	x1 -= addwidth
 	x2 += addwidth
 
-	n = 50
+	n = 50 # change to higher spatial resolution (n = 500) to test whether rD47/sqrt(N) == SI.min()
 	XI,YI = meshgrid(linspace(x1, x2, n), linspace(y1, y2, n))
 	SI = array([[
 		total_error(a, b, c, CM, xi, a*yi + b*xi + c, 0)
@@ -302,7 +293,8 @@ def errormap(data, a, b, c, CM, Nominal_D47,
 	for label in labels:
 		label.set_zorder(-100)
 	
-	print(f'min(SI) = {SI.min():.6f} ‰')
+	if verbal:
+		print(f'min(SI) = {SI.min():.6f} ‰')
 
 	axis([x1, x2, y1, y2])
 	xlabel('δ$_{47}$ (‰)')
@@ -335,7 +327,7 @@ def fig_properties_of_standardization_errors(session = 'Session02', lab = 'Lab12
 	figure_margins(fig, 15, 5, 13, 8, hspace = .2, wspace = .1)
 
 	ax = subplot(221)
-	errormap(data, a, b, c, CM, Nominal_D47, [(2, 0.46), (-6, 0.6), (-15, 0.65), (-25, 0.65), (-36, 0.68)], anchornumbers = True)
+	errormap(data, a, b, c, CM, Nominal_D47, [(2, 0.37), (-6, 0.51), (-15, 0.56), (-25, 0.56), (-36, 0.59)], anchornumbers = True)
 	title(f'Original data ({lab}, {session})', size = 9, weight = 'bold')
 # 	ax.set_xticklabels(['']*len(ax.get_xticklabels()))
 	xlabel('')
@@ -358,7 +350,7 @@ def fig_properties_of_standardization_errors(session = 'Session02', lab = 'Lab12
 	a, b, c, CM, rD47 = normalize(data2, Nominal_D47)
 	
 	ax = subplot(222)
-	errormap(data2, a, b, c, CM, Nominal_D47, [(8, 0.6), (-2, 0.61), (-10, 0.62), (-18, 0.63), (-25, 0.64), (-33, 0.65)], anchornumbers = True)
+	errormap(data2, a, b, c, CM, Nominal_D47, [(8, 0.51), (-2, 0.52), (-10, 0.53), (-18, 0.54), (-25, 0.55), (-33, 0.56)], anchornumbers = True)
 	title(f'Doubling the number of ETH-3 analyses', size = 9, weight = 'bold')
 # 	ax.set_xticklabels(['']*len(ax.get_xticklabels()))
 	xlabel('')
@@ -383,7 +375,7 @@ def fig_properties_of_standardization_errors(session = 'Session02', lab = 'Lab12
 	a, b, c, CM, rD47 = normalize(data2, Nominal_D47)
 	
 	ax = subplot(223)
-	errormap(data2, a, b, c, CM, Nominal_D47, [(7, 0.4),(2, 0.5),(-4, 0.57), (-10, 0.62),(-18, 0.66),(-27, 0.66),(-35, 0.66)], anchornumbers = True)
+	errormap(data2, a, b, c, CM, Nominal_D47, [(7, 0.31),(2, 0.41),(-4, 0.48), (-10, 0.53),(-18, 0.57),(-27, 0.57),(-35, 0.57)], anchornumbers = True)
 	title(f'Doubling the number of ETH-1 analyses', size = 9, weight = 'bold')
 
 	data3 = [r.copy() for r in data]
@@ -400,7 +392,7 @@ def fig_properties_of_standardization_errors(session = 'Session02', lab = 'Lab12
 	ylabel('')
 	yticks([])
 	
-	savefig('properties_of_standardization_errors.pdf')
+	savefig('Fig1_properties_of_standardization_errors.pdf')
 	close(fig)
 
 def fig_allo_vs_auto_erors():
@@ -427,13 +419,14 @@ def fig_allo_vs_auto_erors():
 			allogenic_error = total_error(a, b, c, CM, d47, D47raw, 0)			
 			out[u] += [(autogenic_error, allogenic_error)]
 
-	fig = figure(figsize = (4.3,4.3))
-	figure_margins(fig, 17, 2, 15, 4, .2, .2)
+	fig = figure(figsize = (6,4))
+	subplots_adjust(left = .11, right = .99, bottom = .13, top = .97, hspace = 0.18, wspace = .2)
+	
 	for k,u in enumerate(out):
-		ax = subplot(221 + k)
+		ax = subplot(230 + [1,2,4,5][k])
 		X, Y = zip(*(out[u]))
 		X, Y = 1000*array(X), 1000*array(Y)
-		kw = dict(ls = 'None', ms = 5, alpha = .75, mec = 'k', mfc = 'None', mew = 2/3, marker = 's')
+		kw = dict(ls = 'None', ms = 4, alpha = .75, mec = 'k', mfc = 'None', mew = 2/3, marker = 's')
 # 		kw['marker'] = {'ETH-4':(3,0,0), 'IAEA-C1':(4,0,0), 'IAEA-C2':(4,0,45), 'MERCK':(3,0,180)}[u]
 		plot(X, Y, **kw)
 		x1, x2, y1, y2 = axis()
@@ -455,17 +448,12 @@ def fig_allo_vs_auto_erors():
 		plot([0,63], [0,63], 'k-', dashes = (8,3), lw = 0.75)
 		xticks(tiks)
 		yticks(tiks)
-	savefig('allo_vs_auto_errors.pdf')
-	close(fig)
 
-	fig = figure(figsize = (2,4.3))
-	figure_margins(fig, 2, 5, 15, 4, hspace = 0)
-	for k,u in enumerate(out):
-		ax = subplot(411 + k)
+		ax = subplot(4,3, k*3 + 3)
 		X, Y = zip(*(out[u]))
 		X, Y = 1000*array(X), 1000*array(Y)
 		R = (1 + (Y/X)**2)**.5
-		print(u, mean(R))
+# 		print(u, mean(R))
 
 		kw = dict(bins = linspace(1,4,25), histtype = 'stepfilled', color = 'k', alpha = .2, lw = 0)
 # 		kw['marker'] = {'ETH-4':(3,0,0), 'IAEA-C1':(4,0,0), 'IAEA-C2':(4,0,45), 'MERCK':(3,0,180)}[u]
@@ -477,8 +465,11 @@ def fig_allo_vs_auto_erors():
 # 		emax = 82
 		ymax = axis()[-1] * 1.1
 		axis([0.9, 4.1, 0, ymax])
+		xticks([1,2,3,4])
 		if k == 3:
 			xlabel('$σ_{47}$ / $σ_{u}$')
+		else:
+		    ax.set_xticklabels( ['' for x in xticks()[0]] )
 		yticks([])
 		grid(alpha = .3)
 # 		if not k % 2:
@@ -487,9 +478,9 @@ def fig_allo_vs_auto_erors():
 			text(0.94, 0.85, u, va = 'top', ha = 'right', weight = 'bold', size = 10, transform = ax.transAxes)
 		else:
 			text(0.05, 0.85, u, va = 'top', ha = 'left', weight = 'bold', size = 10, transform = ax.transAxes)
-	savefig('allo_histogram.pdf')
-	close(fig)
 
+	savefig('Fig2_allo_vs_auto_errors.pdf')
+	close(fig)
 
 def montecarlo_normality(rng, S, KS, session, rD47 = 'None', Nmc = N_MONTECARLO):
 	A = array([
@@ -604,30 +595,32 @@ def test_normality(rD47 = 'None', ultext = '', lrtext = ''):
 		r['Session'] = f"{r['Lab']}_{r['Session']}"
 	sessions = sorted({r['Session'] for r in data})
 	newfit_residuals = []
-	for session in sessions:
-		print(session)
+	for session in tqdm(sessions):
+# 		print(f'{k+1}/{len(sessions)}')
 		S = [r for r in data if r['Session'] == session]
 		montecarlo_normality(rng, S, KS, session, rD47)
-
-	fig = figure(figsize = (100/25.4,65/25.4))
-	figure_margins(fig, 10, 35, 7, 3)
 
 	plot([0,1], [0,1], 'k-', alpha = .25, lw = 1)
 	axis([0,1,0,1])
 	xlabel('K-S  p-value', labelpad = -10)
-	ylabel('Cumulative\ndistribution function', labelpad = -8)
+	if ultext == 'A':
+		ylabel('Cumulative\ndistribution function', labelpad = -8)
 
 	for which, color, label in [
-		('both', (.25,.25,1), '\ntotal errors'),
-		('auto', (0,.75,.25), 'autogenic\nerrors'),
-		('allo', (1,.5,0), 'standardization\nerrors'),
+		('allo', (1,.5,0), 'allogenic errors'),
+		('both', (.25,.25,1), 'full errors'),
+		('auto', (0,.75,.25), 'autogenic errors'),
 		]:
 		X = array([ks['pvalue'] for ks in KS[which]])
 		X.sort()
 		Y = arange(X.size)/(X.size-1)
 
 		p = kstest(X, 'uniform').pvalue
-		pstring = f"${p:.0e}}}$".replace('e-', '\\times10^{–') if p < 5e-3 else f"{p:.2f}"
+		if p<1e-3:
+			pstring = f'p < $10^{{{ceil(log10(p)):.0f}}}$'
+		else:
+			pstring = f"p = {p:.2f}" if p > 5e-3 else f"p = {p:.3f}"
+# 		pstring = f"${p:.0e}}}$".replace('e-', '×10^{–') if p < 1e-3 else (f"{p:.2f}" if p > 5e-3 else f"{p:.3f}")
 		if rD47 == 'None':
 			with open('commands.tex', 'a') as fid:
 				if which == 'auto':
@@ -635,8 +628,9 @@ def test_normality(rD47 = 'None', ultext = '', lrtext = ''):
 				elif which == 'allo':
 					fid.write(f'\\newcommand{{\\pAlloNormality}}{{{pstring}}}\n')
 		plot(X, Y, '-', color = color, lw = 2,
-			label = f"{label}\n(p = {pstring})"
+			label = f"{label} ({pstring})"
 			)
+		f  = interpolate.interp1d(X, Y)
 	
 	text(.95, .05, lrtext, ha = 'right', transform = gca().transAxes)
 	text(.03, .97, ultext, weight = 'bold', va = 'top', transform = gca().transAxes)
@@ -644,20 +638,13 @@ def test_normality(rD47 = 'None', ultext = '', lrtext = ''):
 	yticks([0,1])
 
 	legend(
-		loc = 'upper left',
-		bbox_to_anchor = (1.025, 1.05),
+		loc = 'upper center',
+		bbox_to_anchor = (0.5, -.15),
 		fontsize = 9,
 		frameon = False,
-		handlelength = 1.3,
-		labelspacing = 1.5,
+		handlelength = 1.6,
+		labelspacing = 0.4,
 		)
-
-	if rD47 == 'None':
-		savefig(f'normality.pdf')
-	else:
-		savefig(f'normality_{rD47*1000:.0f}ppm.pdf')
-# 	show()
-	close(fig)
 
 	if rD47 == 'None':
 	
@@ -681,7 +668,7 @@ def test_normality(rD47 = 'None', ultext = '', lrtext = ''):
 		p = [ks['pvalue'] for ks in KS['allo']]
 		k = p.index(min(p))
 		ks = KS['both'][k]
-		print(ks)
+# 		print(ks)
 		fig = figure(figsize = (3.5,4.5))
 		figure_margins(fig, 10, 2, 12, 2, 0, -0.15)
 
@@ -707,14 +694,15 @@ def test_normality(rD47 = 'None', ultext = '', lrtext = ''):
 		f = interpolate.interp1d(ks['Yo'], ks['X'])
 # 		hw = linspace(0,max(max['X']-ks['D47'], ks['D47'] - max['X'], 1000)
 # 		conf = [for w in hw]
-		print(f'      MC Δ47 95 % CL = {(f(.025) + f(.975))/2:.4f} ± {(-f(.025) + f(.975))/2:.4f} ‰')
+# 		print(f'      MC Δ47 95 % CL = {(f(.025) + f(.975))/2:.4f} ± {(-f(.025) + f(.975))/2:.4f} ‰')
 		f = interpolate.interp1d(ks['Yh'], ks['X'])
-		print(f'Gaussian Δ47 95 % CL = {(f(.025) + f(.975))/2:.4f} ± {(-f(.025) + f(.975))/2:.4f} ‰')
-		print(f'MC mean Δ47 = {mean(ks["X"]):.4f} ‰ ({ks["D47"]}, {ks["sigma"]*1.96})')
+# 		print(f'Gaussian Δ47 95 % CL = {(f(.025) + f(.975))/2:.4f} ± {(-f(.025) + f(.975))/2:.4f} ‰')
+# 		print(f'MC mean Δ47 = {mean(ks["X"]):.4f} ‰ ({ks["D47"]}, {ks["sigma"]*1.96})')
 
 		plot(ks['X'], ks['Yo'], 'r-', lw = 1, label = 'Monte Carlo')
 		plot(ks['X'], ks['Yh'], 'k-', lw = 1, label = 'Gaussian')
-		pv = f"${ks['pvalue']:.0e}}}$".replace('e-0', '\\times10^{–')
+# 		pv = f"${ks['pvalue']:.0e}}}$".replace('e-0', '\\times10^{–')
+		pv = f"{ks['pvalue']:.4f}"
 		with open('commands.tex', 'a') as fid:
 			fid.write(f'\\newcommand{{\\worseMCpv}}{{{pv}}}\n')
 			fid.write(f'\\newcommand{{\\worseMCmeanMC}}{{{mean(ks["X"]):.4f}}}\n')
@@ -723,14 +711,14 @@ def test_normality(rD47 = 'None', ultext = '', lrtext = ''):
 			fid.write(f'\\newcommand{{\\worseMCsigmaGauss}}{{{ks["sigma"]:.4f}}}\n')
 			fid.write(f'\\newcommand{{\\worseMCmeanOffset}}{{{(ks["D47"] - mean(ks["X"]))/ks["sigma"]:.2f}}}\n')
 			fid.write(f'\\newcommand{{\\worseMCsigmaOffset}}{{{(ks["sigma"] - stdev(ks["X"]))/ks["sigma"]:.2f}}}\n')
-		text(.95, .05, f'p = {pv}', ha = 'right', transform = gca().transAxes)
+		text(.05, .95, f'p = {pv}', ha = 'left', va = 'top', transform = gca().transAxes)
 		xlabel(f"Δ$_{{47}}$ of {ks['sample']} in {ks['session'].split('_')[1]} of {ks['session'].split('_')[0]}")
 		ylabel('Cumulative\ndistribution function', labelpad = -8)
 		axis([ks['X'].min(), ks['X'].max(), -.02, 1.02])
 		yticks([0,1])
-		legend()
+		legend(loc = 'lower right')
 
-		savefig(f'normality_worse_example.pdf')
+		savefig('Fig4_normality_worse_example.pdf')
 		close(fig)
 			
 
@@ -790,13 +778,127 @@ def fig_lmfit_effect():
 				ax.set_yticklabels(['' for t in ax.get_yticklabels()])
 				ylabel('')
 
-	savefig('benefits_of_pooled_std.pdf')
+	savefig('Fig5_benefits_of_pooled_std.pdf')
 	close(fig)
 
+def fig_aliquots(Naliq = 16, Nanchor1 = 16, Nanchor2 = 2, Nseries = 20, Nseries_replicates = 4):
+	import D47crunch_snapshot as D47crunch
 	
-	
-	
+	fig = figure(figsize = (80/25.4, 150/25.4))
+	subplots_adjust(0.28, 0.23, .98, .99, .1, .15)
 
+	D = D47crunch.D47data()
+	samples = [
+		dict(Sample = 'ETH-1', N = Nseries_replicates),
+		dict(Sample = 'ETH-2', N = Nseries_replicates),
+		dict(Sample = 'ETH-3', N = Nseries_replicates),
+		]
+	for k in range(Nseries):
+		samples.append(dict(
+			Sample = f'FOO-{k}',
+			d13C_VPDB = -5.,
+			d18O_VPDB = -5.,
+			D47 = 0.5 + sin(k/4)/40,
+			N = Nseries_replicates
+			))
+	D.simulate(samples, rD47 = 0.010, seed = 1)
+	D.standardize()
+	D.plot_sessions()
+
+	X = list(range(Nseries))
+	Y = [D.samples[f'FOO-{k}']['D47'] for k in X]
+	eY = [D.samples[f'FOO-{k}']['SE_D47']*D.t95 for k in X]
+	Z = [y-Y[0] for y in Y]
+	ZeZ = [D.sample_average([f'FOO-{k}','FOO-0'], [1, -1], normalize = False) for k in X]
+	Z, eZ  =zip(*ZeZ)
+
+	ax = subplot(411)
+	errorbar(X, Y, eY, ls = 'None', marker = 'None', ecolor = 'k', elinewidth = 1, capthick = 1, capsize = 3)
+	plot(X[0], Y[0], 'ko', mec = 'k', mew = 1, ms = 5)
+	plot(X[1:], Y[1:], 'wo', mec = 'k', mew = 1, ms = 5)
+	axhline(Y[0], color = 'k', lw = .75, alpha = .25, zorder = -10)
+	xticks([])
+	ylabel('Δ$_{47}$ (‰)')
+	axis([-1, Nseries, None, None])
+	y1, y2 = axis()[-2:]
+	yticks(linspace(46,54,5)/100)
+	text(.95, .9, 'A', size = 14, weight = 'bold', transform = ax.transAxes, va = 'top', ha = 'right')
+	
+	ax = subplot(412)
+	errorbar(X, Z, eZ, ls = 'None', marker = 'None', ecolor = 'k', elinewidth = 1, capthick = 1, capsize = 3)
+	plot(X[0], Z[0], 'ko', mec = 'k', mew = 1, ms = 5)
+	plot(X[1:], Z[1:], 'wo', mec = 'k', mew = 1, ms = 5)
+	xticks([])
+	axis([-1, Nseries, None, None])
+	y3, y4 = axis()[-2:]
+	yticks(linspace(-4,4,5)/100)
+	axis([-1, Nseries, (y3+y4-y2+y1)/2, (y3+y4+y2-y1)/2])
+	axhline(0, color = 'k', lw = .75, alpha = .25, zorder = -10)
+	ylabel('Δ$_{47}$ difference relative\nto first sample (‰)')
+	text(.95, .9, 'B', size = 14, weight = 'bold', transform = ax.transAxes, va = 'top', ha = 'right')
+
+	ax = subplot(212)
+
+	for Nanchor, ls in [
+		(Nanchor1, '--'),
+		(Nanchor2, '-'),
+		]:
+		D = D47crunch.D47data()
+		D.simulate([
+			dict(Sample = 'ETH-1', N = Nanchor),
+			dict(Sample = 'ETH-2', N = Nanchor),
+			dict(Sample = 'ETH-3', N = Nanchor),
+			dict(Sample = 'FOO', d13C_VPDB = -5., d18O_VPDB = -5., D47 = 0.5, N = Naliq),
+			dict(Sample = 'BAR', d13C_VPDB = -5., d18O_VPDB = -5., D47 = 0.5, N = Naliq),
+			], rD47 = 0.010, seed = 1)
+		D.standardize()
+	
+		CM = array([
+			[D.sample_D47_covar('FOO'), D.sample_D47_covar('FOO', 'BAR')],
+			[D.sample_D47_covar('FOO', 'BAR'), D.sample_D47_covar('BAR')]
+			])
+		X = D.samples['FOO']['D47']
+		sX = D.samples['FOO']['SE_D47']
+		Y = D.samples['BAR']['D47']
+		sY = D.samples['BAR']['SE_D47']
+
+		xmin = min(X-3*sX, Y-3*sY)
+		xmax = max(X+3*sX, Y+3*sY)
+		w,h,r = cov_ellipse(CM)
+		plot([], [], 'r-', lw = 1, ls = ls, label = f'Joint 95 % confidence region ({Naliq} replicates\nper unknown; {Nanchor} replicates per anchor)')
+		ax.add_artist(
+			Ellipse(
+				xy = (X,Y), width = w, height = h, angle = r,
+				lw = 1., fc = 'none', ec = 'r', ls = ls ))
+
+	plot([xmin, xmax], [xmin, xmax], 'k-', lw = 0.75, dashes = (6,2,3,2))
+	axis([xmin, xmax, xmin, xmax])
+	legend(loc = 'center', bbox_to_anchor = (.35, -0.45), frameon = False, labelspacing = 1.5, fontsize = 8)
+	xlabel('Δ$_{47}$ of first aliquot (‰)')
+	ylabel('Δ$_{47}$ of second aliquot (‰)')
+	text(.05, .95, 'C', size = 14, weight = 'bold', transform = ax.transAxes, va = 'top', ha = 'left')
+	yticks(arange(48,52)/100)
+
+	savefig('Fig6_compare_aliquots.pdf')
+	close(fig)
+	
+def fig_montecarlo():
+
+	figg = figure(figsize = (170/25.4,75/25.4))
+	figure_margins(figg, 10, 5, 25, 3)
+
+	subplot(131)
+	print('Testing normality with observed Δ47 repeatabilities:')
+	test_normality('None', 'A', f'N = ${N_MONTECARLO:.0e}}}$\nMonte Carlo noise\nbased on observed\nΔ$_{{47}}$ repeatabilities'.replace('e+0', '0^{'))
+	subplot(132)
+	print('Testing normality with 50 ppm Δ47 repeatability:')
+	test_normality(0.05, 'B', f'N = ${N_MONTECARLO:.0e}}}$\nMonte Carlo\nnoise based on Δ$_{{47}}$\nrepeatability of 50 ppm'.replace('e+0', '0^{'))
+	subplot(133)
+	print('Testing normality with 5 ppmd Δ47 repeatability:')
+	test_normality(0.005, 'C', f'N = ${N_MONTECARLO:.0e}}}$\nMonte Carlo\nnoise based on Δ$_{{47}}$\nrepeatability of 5 ppm'.replace('e+0', '0^{'))
+
+	savefig('Fig7_normality.pdf')
+	close(figg)
 
 if __name__ == '__main__':
 
@@ -804,20 +906,22 @@ if __name__ == '__main__':
 	Nominal_D47['ETH-1'] = 0.2052
 	Nominal_D47['ETH-2'] = 0.2085
 	Nominal_D47['ETH-3'] = 0.6132
-	# InterCarb values
+	# I-CDES values
 
 	data = read_csv('rawdata.csv')
-	N_lab_session_sample = len({f"{r['Lab']}_{r['Session']}_{r['Sample']}" for r in data if r['Sample'] not in Nominal_D47})
+
 	with open('commands.tex', 'w') as fid:
+
+		N_lab_session_sample = len({f"{r['Lab']}_{r['Session']}_{r['Sample']}" for r in data if r['Sample'] not in Nominal_D47})
 		fid.write(f'\\newcommand{{\\Nlss}}{{{N_lab_session_sample}}}\n')
+
 		N_MONTECARLO_str = f'{N_MONTECARLO:.0e}'.replace('e+0', '0\\hi{') + '}'
 		fid.write(f'\\newcommand{{\\Nmc}}{{{N_MONTECARLO_str}}}\n')
 
 	fig_properties_of_standardization_errors()
 	fig_allo_vs_auto_erors()
 	fig_lmfit_effect()
+	fig_aliquots()
+	fig_montecarlo()
 
-	test_normality('None', '(A)', f'N = ${N_MONTECARLO:.0e}}}$\nMonte Carlo noise\nbased on observed\nΔ$_{{47}}$ reproducibilities'.replace('e+0', '0^{'))
-	test_normality(0.05, '(B)', f'N = ${N_MONTECARLO:.0e}}}$\nMonte Carlo\nnoise based on Δ$_{{47}}$\nreproducibility of 50 ppm'.replace('e+0', '0^{'))
-	test_normality(0.005, '(C)', f'N = ${N_MONTECARLO:.0e}}}$\nMonte Carlo\nnoise based on Δ$_{{47}}$\nreproducibility of 5 ppm'.replace('e+0', '0^{'))
 	
